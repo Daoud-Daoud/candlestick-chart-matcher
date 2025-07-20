@@ -1,0 +1,17 @@
+# Ignore uploaded files and system files
+static/uploads/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.sqlite3
+*.log
+
+# Ignore user and OS settings
+.env
+*.env
+.DS_Store
+Thumbs.db
+
+# Ignore IDE settings
+.vscode/
