@@ -9,13 +9,15 @@ import mplfinance as mpf
 from sklearn.metrics.pairwise import cosine_similarity
 from scipy.stats import pearsonr
 from scipy.spatial.distance import euclidean
+from multiprocessing import Pool, cpu_count # Ensure this import is at the top
 
 # --- Configuration ---
+# These are typically passed dynamically or from a config, but kept for standalone testing context
 historical_csv = 'C:/Users/DAOUD/Desktop/ML for Finance/XAU.csv'
 user_image_path = 'C:/Users/DAOUD/Desktop/ML for Finance/Screenshot 2025-07-19 153137.png'
 NUM_MATCHES_TO_SHOW = 10
 CANDLES_AFTER_PATTERN = 15
-MIN_MATCH_PERCENT = 90  # Lowered since we're using stricter scoring
+MIN_MATCH_PERCENT = 90
 
 # --- Enhanced Pattern Matching Functions ---
 
@@ -25,37 +27,31 @@ def calculate_enhanced_similarity(user_line, candidate_line, weights=None):
     """
     if weights is None:
         weights = {
-            'cosine': 0.3,      # Shape similarity (reduced weight)
-            'pearson': 0.2,     # Linear correlation
-            'amplitude': 0.25,   # Magnitude similarity
-            'dtw': 0.25         # Dynamic time warping (pattern alignment)
+            'cosine': 0.3,
+            'pearson': 0.2,
+            'amplitude': 0.25,
+            'dtw': 0.25
         }
     
-    # Ensure inputs are flattened
     user_flat = user_line.flatten()
     candidate_flat = candidate_line.flatten()
     
-    # 1. Cosine similarity (shape)
     cosine_sim = cosine_similarity(user_flat.reshape(1, -1), 
                                  candidate_flat.reshape(1, -1))[0][0]
     cosine_score = ((cosine_sim + 1) / 2) * 100
     
-    # 2. Pearson correlation (linear relationship)
     try:
         pearson_corr, _ = pearsonr(user_flat, candidate_flat)
         pearson_score = ((pearson_corr + 1) / 2) * 100 if not np.isnan(pearson_corr) else 0
     except:
         pearson_score = 0
     
-    # 3. Amplitude similarity (magnitude of moves)
-    user_range = np.ptp(user_flat)  # peak-to-peak range
+    user_range = np.ptp(user_flat)
     candidate_range = np.ptp(candidate_flat)
     
-    # Calculate relative differences in key statistics
     user_std = np.std(user_flat)
     candidate_std = np.std(candidate_flat)
     
-    # Amplitude similarity based on range and volatility
     if max(user_range, candidate_range) > 1e-6:
         range_similarity = 100 * (1 - abs(user_range - candidate_range) / max(user_range, candidate_range))
     else:
@@ -67,17 +63,15 @@ def calculate_enhanced_similarity(user_line, candidate_line, weights=None):
         std_similarity = 100
         
     amplitude_score = (range_similarity + std_similarity) / 2
-    amplitude_score = max(0, min(100, amplitude_score))  # Clamp to 0-100
+    amplitude_score = max(0, min(100, amplitude_score))
     
-    # 4. Dynamic Time Warping similarity (simplified version)
     dtw_score = calculate_dtw_similarity(user_flat, candidate_flat)
     
-    # Combine scores with weights
     final_score = (
         weights['cosine'] * cosine_score +
         weights['pearson'] * pearson_score +
-        weights['amplitude'] * amplitude_score +
-        weights['dtw'] * dtw_score
+        weights['dtw'] * dtw_score + # Ensure DTW is weighted
+        weights['amplitude'] * amplitude_score # Ensure amplitude is weighted
     )
     
     return {
@@ -98,7 +92,6 @@ def calculate_dtw_similarity(seq1, seq2):
     if n == 0 or m == 0:
         return 0
     
-    # Create distance matrix
     dtw_matrix = np.full((n + 1, m + 1), np.inf)
     dtw_matrix[0, 0] = 0
     
@@ -106,20 +99,17 @@ def calculate_dtw_similarity(seq1, seq2):
         for j in range(1, m + 1):
             cost = abs(seq1[i-1] - seq2[j-1])
             dtw_matrix[i, j] = cost + min(
-                dtw_matrix[i-1, j],      # insertion
-                dtw_matrix[i, j-1],      # deletion
-                dtw_matrix[i-1, j-1]     # match
+                dtw_matrix[i-1, j],
+                dtw_matrix[i, j-1],
+                dtw_matrix[i-1, j-1]
             )
     
-    # Convert distance to similarity score
     max_possible_distance = max(np.ptp(seq1), np.ptp(seq2)) * max(n, m)
     if max_possible_distance == 0:
         return 100
     
     similarity = 100 * (1 - dtw_matrix[n, m] / max_possible_distance)
     return max(0, min(100, similarity))
-
-# --- Original Functions with Enhancements ---
 
 def extract_candle_centers_from_image(image_path):
     if not os.path.exists(image_path):
@@ -162,7 +152,7 @@ def extract_candle_centers_from_image(image_path):
                 center_y = y + h / 2
                 candles.append((center_x, center_y))
 
-    candles = sorted(candles, key=lambda c: c[0])  # sort by x (left to right)
+    candles = sorted(candles, key=lambda c: c[0])
 
     if len(candles) < 2:
         print("Not enough candles detected to form a pattern.")
@@ -173,18 +163,20 @@ def extract_candle_centers_from_image(image_path):
     y_max = centers_y.max()
     y_range = y_max - y_min if y_max != y_min else 1e-6
 
-    normalized_centers = [(c[0], (y_max - c[1]) / y_range) for c in candles]  # normalize y
+    normalized_centers = [(c[0], (y_max - c[1]) / y_range) for c in candles]
 
-    return np.array([c[1] for c in normalized_centers])  # just normalized y values (shape line)
+    return np.array([c[1] for c in normalized_centers])
 
 def pattern_vector_from_centers(centers):
     return np.array(centers).reshape(1, -1)
 
-from multiprocessing import Pool, cpu_count
-
+# Corrected _match_worker to accept center_arr
 def _match_worker(args):
-    i, user_line, open_arr, close_arr, pattern_len, candles_after, min_match_percent = args
-    centers = (open_arr[i:i+pattern_len] + close_arr[i:i+pattern_len]) / 2
+    i, user_line, center_arr, pattern_len, candles_after, min_match_percent = args
+    
+    # Use the pre-calculated center array
+    centers = center_arr[i:i+pattern_len]
+
     min_y = centers.min()
     max_y = centers.max()
     y_range = max_y - min_y if max_y != min_y else 1e-6
@@ -203,50 +195,64 @@ def _match_worker(args):
     return None
 
 def find_matching_shape_lines_enhanced(df, user_line, pattern_len, candles_after, min_match_percent):
-    matches = []
-    seen_dates = set()
+    # all_raw_matches is no longer explicitly needed as results are collected via pool.map
     total_len = len(df)
     print(f"Searching through {total_len - pattern_len - candles_after} potential patterns...")
 
-    open_arr = df['Open'].values
-    close_arr = df['Close'].values
+    # Ensure 'Center' column exists, created in process_historical_data
+    if 'Center' not in df.columns:
+        raise ValueError("DataFrame must have a 'Center' column. Call process_historical_data first.")
+    
+    center_arr = df['Center'].values
 
     args_list = [
-        (i, user_line, open_arr, close_arr, pattern_len, candles_after, min_match_percent)
+        (i, user_line, center_arr, pattern_len, candles_after, min_match_percent)
         for i in range(total_len - pattern_len - candles_after)
     ]
 
     with Pool(cpu_count()) as pool:
-        results = pool.map(_match_worker, args_list)
+        raw_results = [res for res in pool.map(_match_worker, args_list) if res is not None]
 
-    for res in results:
-        if res is None:
-            continue
+    matches_with_data = []
+    for res in raw_results:
         i = res['index']
         segment = df.iloc[i:i+pattern_len]
         subsequent = df.iloc[i+pattern_len:i+pattern_len+candles_after]
-        segment_start = segment.index[0]
-        segment_end = segment.index[-1]
-
-        if any(start <= segment_end and end >= segment_start for (start, end) in seen_dates):
-            continue
-
+        
         res.update({
             'pattern_data': segment,
             'subsequent_data': subsequent,
         })
-        matches.append(res)
-        seen_dates.add((segment_start, segment_end))
+        matches_with_data.append(res)
+    
+    matches_with_data.sort(key=lambda m: m['match_percent'], reverse=True)
 
-    matches.sort(key=lambda m: m['match_percent'], reverse=True)
-    print(f"Found {len(matches)} matches above {min_match_percent}% threshold")
-    return matches
+    final_matches = []
+    seen_indices = set()
+    for match in matches_with_data:
+        start_idx = match['index']
+        end_idx = match['index'] + len(match['pattern_data']) + len(match['subsequent_data']) -1 
 
+        is_overlapping = False
+        for i in range(start_idx, end_idx + 1):
+            if i in seen_indices:
+                is_overlapping = True
+                break
+        
+        if not is_overlapping:
+            final_matches.append(match)
+            for i in range(start_idx, end_idx + 1):
+                seen_indices.add(i)
+
+    print(f"Found {len(final_matches)} unique matches above {min_match_percent}% threshold")
+    return final_matches
 
 
 def process_historical_data(df):
     df.index = pd.to_datetime(df.index)
     df = df.sort_index()
+    # New: Pre-calculate the 'Center' for each candle
+    df['Center'] = (df['Open'] + df['Close']) / 2
     return df
 
 def plot_user_line_overlay(ax, pattern_data, norm_centers, user_centers):
@@ -254,13 +260,9 @@ def plot_user_line_overlay(ax, pattern_data, norm_centers, user_centers):
     y_vals = norm_centers * (pattern_data['High'].max() - pattern_data['Low'].min()) + pattern_data['Low'].min()
     user_y_vals = user_centers * (pattern_data['High'].max() - pattern_data['Low'].min()) + pattern_data['Low'].min()
     ax.plot(x_vals, user_y_vals, color='orange', linestyle='--', linewidth=2, label='User Pattern Line')
-    #ax.plot(x_vals, y_vals, color='blue', linestyle='-', alpha=0.5, linewidth=1, label='Matched Pattern Line')
     ax.legend()
 
 def print_detailed_match_info(match, match_num):
-    """
-    Print detailed breakdown of similarity metrics
-    """
     metrics = match['similarity_breakdown']
     print(f"\n--- Match {match_num} Details ---")
     print(f"Date: {match['pattern_data'].index[0]}")
@@ -272,7 +274,6 @@ def print_detailed_match_info(match, match_num):
     print(f"User Pattern Range: {metrics['user_range']:.4f}")
     print(f"Match Range:        {metrics['candidate_range']:.4f}")
     
-    # Calculate outcome
     if len(match['subsequent_data']) > 0:
         first_close = match['pattern_data']['Close'].iloc[-1]
         final_close = match['subsequent_data']['Close'].iloc[-1]
@@ -328,9 +329,6 @@ def summarize_outcomes(matches, html_format=False):
         Average Subsequent Move: {avg_move:+.3f}%
         """
 
-
-
-
 if __name__ == "__main__":
     print("="*60)
     print("ENHANCED SHAPE-BASED CANDLE PATTERN MATCHER")
@@ -363,6 +361,7 @@ if __name__ == "__main__":
         print("Missing required OHLC columns.")
         exit()
 
+    # Call the modified process_historical_data
     df = process_historical_data(df)
     print(f"✓ Loaded {len(df)} historical candles from {df.index[0]} to {df.index[-1]}")
 
