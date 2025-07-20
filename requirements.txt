@@ -1,1 +1,9 @@
-Flasknumpyopencv-pythonpandasscikit-learnmatplotlibmplfinancescipy
+Flask
+numpy
+opencv-python
+pandas
+scikit-learn
+matplotlib
+mplfinance
+scipy
+gunicorn
