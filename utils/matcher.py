@@ -180,52 +180,68 @@ def extract_candle_centers_from_image(image_path):
 def pattern_vector_from_centers(centers):
     return np.array(centers).reshape(1, -1)
 
+from multiprocessing import Pool, cpu_count
+
+def _match_worker(args):
+    i, user_line, open_arr, close_arr, pattern_len, candles_after, min_match_percent = args
+    centers = (open_arr[i:i+pattern_len] + close_arr[i:i+pattern_len]) / 2
+    min_y = centers.min()
+    max_y = centers.max()
+    y_range = max_y - min_y if max_y != min_y else 1e-6
+    norm_centers = (centers - min_y) / y_range
+
+    similarity_metrics = calculate_enhanced_similarity(user_line, norm_centers)
+
+    if similarity_metrics['final_score'] >= min_match_percent:
+        return {
+            'index': i,
+            'match_percent': similarity_metrics['final_score'],
+            'similarity_breakdown': similarity_metrics,
+            'norm_centers': norm_centers,
+            'raw_centers': centers
+        }
+    return None
+
 def find_matching_shape_lines_enhanced(df, user_line, pattern_len, candles_after, min_match_percent):
-    """
-    Enhanced pattern matching with multiple similarity metrics
-    """
     matches = []
     seen_dates = set()
-    
-    print(f"Searching through {len(df) - pattern_len - candles_after} potential patterns...")
-    
-    for i in range(len(df) - pattern_len - candles_after):
+    total_len = len(df)
+    print(f"Searching through {total_len - pattern_len - candles_after} potential patterns...")
+
+    open_arr = df['Open'].values
+    close_arr = df['Close'].values
+
+    args_list = [
+        (i, user_line, open_arr, close_arr, pattern_len, candles_after, min_match_percent)
+        for i in range(total_len - pattern_len - candles_after)
+    ]
+
+    with Pool(cpu_count()) as pool:
+        results = pool.map(_match_worker, args_list)
+
+    for res in results:
+        if res is None:
+            continue
+        i = res['index']
         segment = df.iloc[i:i+pattern_len]
+        subsequent = df.iloc[i+pattern_len:i+pattern_len+candles_after]
         segment_start = segment.index[0]
         segment_end = segment.index[-1]
-        
-        # Avoid overlapping with any previously seen date range
+
         if any(start <= segment_end and end >= segment_start for (start, end) in seen_dates):
             continue
 
-        # Calculate candle body centers (Open + Close) / 2
-        centers = ((segment['Open'] + segment['Close']) / 2).values
-        
-        # Normalize to 0-1 range
-        min_y = centers.min()
-        max_y = centers.max()
-        y_range = max_y - min_y if max_y != min_y else 1e-6
-        norm_centers = (centers - min_y) / y_range
-        
-        # Calculate enhanced similarity
-        similarity_metrics = calculate_enhanced_similarity(user_line, norm_centers)
-        
-        if similarity_metrics['final_score'] >= min_match_percent:
-            matches.append({
-                'start_index': i,
-                'match_percent': similarity_metrics['final_score'],
-                'similarity_breakdown': similarity_metrics,
-                'pattern_data': segment,
-                'subsequent_data': df.iloc[i+pattern_len:i+pattern_len+candles_after],
-                'norm_centers': norm_centers,
-                'raw_centers': centers
-            })
-            seen_dates.add((segment_start, segment_end))  # Track full datetime range
+        res.update({
+            'pattern_data': segment,
+            'subsequent_data': subsequent,
+        })
+        matches.append(res)
+        seen_dates.add((segment_start, segment_end))
 
-    # Sort by final score
     matches.sort(key=lambda m: m['match_percent'], reverse=True)
     print(f"Found {len(matches)} matches above {min_match_percent}% threshold")
     return matches
+
 
 
 def process_historical_data(df):
