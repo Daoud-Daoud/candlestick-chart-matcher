@@ -20,10 +20,11 @@
         .layout {
             display: flex;
             justify-content: center;
-            align-items: flex-start;
+            align-items: center;
             flex-wrap: wrap;
             gap: 30px;
             margin-top: 30px;
+            min-height: 70vh;
         }
 
         .column {
@@ -37,9 +38,9 @@
             background-color: #333;
             padding: 25px;
             border-radius: 12px;
-            max-width: 500px;
+            max-width: 400px;
             width: 100%;
-            flex: 1 1 500px;
+            flex: 0 1 400px;
         }
 
         input,
@@ -107,7 +108,7 @@
             border-radius: 10px;
             padding: 15px;
             text-align: center;
-            flex: 1 1 300px;
+            flex: 0 1 320px;
         }
 
         .donation-box h4 {
@@ -146,16 +147,16 @@
     <div class="layout">
         <!-- Left: Instructions + Why -->
         <div class="column">
-            <h3>📝 How to Use</h3>
-            <p>📸 Take a snapshot of any candlestick chart</p>
-            <p>⬆ Upload or paste the image below</p>
-            <p>🧠 We match it to similar historical patterns</p>
-            <p>📈 See what happened next</p>
+            <h3>How to Use</h3>
+            <p>Take a snapshot of any candlestick chart</p>
+            <p>Upload or paste the image below</p>
+            <p>We match it to similar historical patterns</p>
+            <p>See what happened next</p>
 
-            <h3 style="margin-top: 30px;">💡 Why This Tool?</h3>
-            <p>📚 Pattern recognition helps traders evaluate probability.</p>
-            <p><strong>🕰 History Repeats Itself</strong></p>
-            <p>⏳ Learn from similar past behavior to make smarter decisions.</p>
+            <h3 style="margin-top: 30px;">Why This Tool?</h3>
+            <p>Pattern recognition helps traders evaluate probability.</p>
+            <p><strong>History Repeats Itself</strong></p>
+            <p>Learn from similar past behavior to make smarter decisions.</p>
         </div>
 
         <!-- Center: Form -->
@@ -269,26 +270,17 @@
         });
 
         function printMatches() {
-            const content = document.getElementById("print-section").innerHTML;
+            const printSection = document.getElementById("print-section");
             const win = window.open("", "", "width=1000,height=700");
-            win.document.write(`
-            <html>
-                <head>
-                    <title>Pattern Match Results</title>
-                    <style>
-                        body { font-family: Arial; background: #fff; color: #000; padding: 20px; }
-                        h2 { color: #fbb034; }
-                        img { max-width: 100%; margin-bottom: 20px; border-radius: 6px; }
-                        table { width: 100%; border-collapse: collapse; margin-top: 20px; }
-                        th, td { padding: 10px; border: 1px solid #999; }
-                    </style>
-                </head>
-                <body>
-                    <h2>Candlestick Match Results</h2>
-                    ${content}
-                </body>
-            </html>
-        `);
+            let html = `<html><head><title>Pattern Match Results</title><style>
+                body { font-family: Arial, sans-serif; background: linear-gradient(to right, #1c1c1c, #2d2d2d); color: #eee; padding: 30px; margin: 0; }
+                h2 { color: #fbb034; text-align: center; }
+                img { margin: 20px auto; display: block; max-width: 95%; border-radius: 10px; }
+                .summary { background-color: #212121; border-left: 6px solid #fbb034; text-align: left; padding: 20px; margin-top: 20px; white-space: pre-wrap; color: #c5e1a5; font-size: 15px; border-radius: 10px; }
+            </style></head><body><h2>Candlestick Match Results</h2>`;
+            html += printSection.innerHTML;
+            html += '</body></html>';
+            win.document.write(html);
             win.document.close();
             win.focus();
             win.print();
