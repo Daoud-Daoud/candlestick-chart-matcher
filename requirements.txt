@@ -1,9 +1,10 @@
-Flask
-numpy
-opencv-python
+flask
 pandas
-scikit-learn
+numpy
 matplotlib
 mplfinance
+scikit-learn
 scipy
+opencv-python
+numba
 gunicorn
