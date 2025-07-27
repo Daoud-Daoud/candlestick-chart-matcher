@@ -64,6 +64,14 @@ def index():
             # Add processing time to summary
             processing_time = time.time() - start_time
             summary += f"\n\n⏱ Processing time: {processing_time:.2f} seconds"
+
+            #add Data available range (drom date x to date y) according to searched file
+            with open(data_path, 'r') as f:
+                lines = f.readlines()
+                if len(lines) > 1:
+                    date_range = f"Data available from {lines[1].split(',')[0]} to {lines[-1].split(',')[0]}"
+                    summary += f"\n\n📅 {date_range}"
+                    
             
             relative_paths = ["/" + path.replace("\\", "/") for path in matches]
             return render_template("index.html", 
